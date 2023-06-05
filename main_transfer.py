@@ -1,7 +1,7 @@
 import copy
 import random
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 import ctrl
@@ -67,13 +67,13 @@ class ArgsGenerator():
     ################
     
     #model related
-    hidden_size: int = 64 # hidden size of modules
+    hidden_size: List = field(default_factory=list)#[16,32,64,128,254] # hidden size of modules #JD: changed the layer input output
     module_type: str = 'conv' #'resnet_block'          
     gating: str = choice('experts', 'locspec', default='locspec')
-    num_modules: int = 1 # Number of modules per layer
+    num_modules: int = 1 # Number of modules per layer #JD: no need to change
     net_arch: int = choice('none', default='none') # -
     activation_structural: str = choice('sigmoid', 'relu', 'tanh', default='relu') #structural activation
-    depth: int = 4 #network depth
+    depth: int = 5 #network depth
     use_bn: int = 1 #whether to use batchnorm in the modules (for Alexnet architecture should be 0)
     use_structural: int = 1 # if 0 no structural components are used at all (model becomes nonmodular if num_modules =1 )
     ################
@@ -218,7 +218,7 @@ def create_dataloader_ctrl(task_gen:TaskGenerator, task, args:ArgsGenerator, spl
     dataset = TensorDataset([x,y], transform)
     return DataLoader(dataset, batch_size=batch_size, shuffle=(split==0)) #or shuffle_test))
 
-def init_model(args:ArgsGenerator, gating='locspec', n_classes=10, i_size=28):
+def init_model(args:ArgsGenerator, gating='locspec', n_classes=10, i_size=32):
     multihead=args.multihead
     from Methods import ModelOptions
     from Methods.models.LMC import LMC_net
@@ -618,7 +618,8 @@ def train(args:ArgsGenerator, model, task_idx, train_loader_current, test_loader
     return model,test_acc,valid_acc,fim_prev
 
 def main(args:ArgsGenerator, task_gen:TaskGenerator):              
-    t = task_gen.add_task()  
+    t = task_gen.add_task() 
+    args.hidden_size = [16,32,64,128,254]  #JD: added this line
     model=init_model(args, args.gating, n_classes=t.n_classes.item(),  i_size=t.x_dim[-1]) 
 
     ##############################

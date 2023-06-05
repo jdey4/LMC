@@ -1,7 +1,9 @@
 import torch
 from torch import Tensor
 import torch.nn as nn
-from torchvision.models.utils import load_state_dict_from_url
+from torch.hub import load_state_dict_from_url
+from torch.utils.model_zoo import load_url as load_state_dict_from_url
+#from torchvision.models.utils import load_state_dict_from_url
 from typing import Type, Any, Callable, Union, List, Optional
 
 
