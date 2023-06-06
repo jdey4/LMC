@@ -620,8 +620,11 @@ def train(args:ArgsGenerator, model, task_idx, train_loader_current, test_loader
 def main(args:ArgsGenerator, task_gen:TaskGenerator):              
     t = task_gen.add_task() 
     args.hidden_size = [16,32,64,128,254]  #JD: added this line
+    print("making model!!!")
     model=init_model(args, args.gating, n_classes=t.n_classes.item(),  i_size=t.x_dim[-1]) 
 
+
+    print("model made!!!")
     ##############################
     #Replay Buffer                 
     if args.replay_capacity!=0:

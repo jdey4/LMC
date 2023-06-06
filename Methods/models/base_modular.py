@@ -423,7 +423,7 @@ class ModularBaseNet(nn.Module):
         ##########################################
         #fields returned by forward pass
         fields = ['mask','mask_bf_act','hidden', 'ssl_pred', 'logit', 'regularizer', 'info']
-        self.forward_template = namedtuple('forward', fields, defaults=(None,) * len(fields))
+        self.forward_template = namedtuple('forward', fields) #, defaults=(None,) * len(fields))
         ##########################################
         ##############################
         #buffers
