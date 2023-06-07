@@ -1,7 +1,7 @@
 import copy
 import random
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 import ctrl
@@ -67,10 +67,10 @@ class ArgsGenerator():
     ################
     
     #model related
-    hidden_size: List = field(default_factory=list)#[16,32,64,128,254] # hidden size of modules #JD: changed the layer input output
+    hidden_size: int = 64 # hidden size of modules
     module_type: str = 'conv' #'resnet_block'          
     gating: str = choice('experts', 'locspec', default='locspec')
-    num_modules: int = 1 # Number of modules per layer #JD: no need to change
+    num_modules: int = 1 # Number of modules per layer
     net_arch: int = choice('none', default='none') # -
     activation_structural: str = choice('sigmoid', 'relu', 'tanh', default='relu') #structural activation
     depth: int = 5 #network depth
@@ -218,7 +218,7 @@ def create_dataloader_ctrl(task_gen:TaskGenerator, task, args:ArgsGenerator, spl
     dataset = TensorDataset([x,y], transform)
     return DataLoader(dataset, batch_size=batch_size, shuffle=(split==0)) #or shuffle_test))
 
-def init_model(args:ArgsGenerator, gating='locspec', n_classes=10, i_size=32):
+def init_model(args:ArgsGenerator, gating='locspec', n_classes=10, i_size=28):
     multihead=args.multihead
     from Methods import ModelOptions
     from Methods.models.LMC import LMC_net
@@ -279,6 +279,9 @@ def init_model(args:ArgsGenerator, gating='locspec', n_classes=10, i_size=32):
         model_options.LMC.unfreeze_structural=args.unfreeze_structural
         model_options.LMC.treat_unfreezing_as_addition=args.treat_unfreezing_as_addition
 
+
+
+        args.hidden_size = [16,32,64,128,254] #JD: changed
         model = LMC_net(model_options.LMC, 
                                     model_options.Module, 
                                     i_size =i_size, 
@@ -618,13 +621,9 @@ def train(args:ArgsGenerator, model, task_idx, train_loader_current, test_loader
     return model,test_acc,valid_acc,fim_prev
 
 def main(args:ArgsGenerator, task_gen:TaskGenerator):              
-    t = task_gen.add_task() 
-    args.hidden_size = [16,32,64,128,254]  #JD: added this line
-    print("making model!!!")
+    t = task_gen.add_task()  
     model=init_model(args, args.gating, n_classes=t.n_classes.item(),  i_size=t.x_dim[-1]) 
 
-
-    print("model made!!!")
     ##############################
     #Replay Buffer                 
     if args.replay_capacity!=0:

@@ -36,15 +36,16 @@ class FixedParameter(nn.Parameter):
             def grad(self, *args, **kwargs):
                 self._grad = None
                 
-class Conv_Module(nn.Module):     #JD: changed to mach Gido'S                
-  def __init__(self,in_channels, out_channels, kernel_size, track_running_stats, pooling_kernel, pooling_stride=None, pooling_padding=0, affine_bn =True, momentum=1, decode=False, use_bn=True, stride=1, **kwargs):
+class Conv_Module(nn.Module):                     
+  def __init__(self,in_channels, out_channels, kernel_size, track_running_stats, pooling_kernel, pooling_stride=None, pooling_padding=0, affine_bn =True, momentum=1, decode=False, use_bn=True, **kwargs):
     super().__init__()
+    print('Hi Jayanta!', in_channels, out_channels)
     self.module = nn.Sequential(OrderedDict([
-                ('conv', nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, **kwargs)),  
+                ('conv', nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, **kwargs)),  
                 ('norm', nn.BatchNorm2d(out_channels, momentum=momentum, affine=affine_bn,
                     track_running_stats=track_running_stats)) if use_bn else ('norm', nn.Identity()),
                 ('relu', nn.ReLU()),
-                #('pool', nn.MaxPool2d(pooling_kernel,pooling_stride, pooling_padding))
+                ('pool', nn.MaxPool2d(pooling_kernel,pooling_stride, pooling_padding))
             ]))
     # self.decoder=None
     # if decode:
@@ -192,15 +193,13 @@ class conv_block_base(nn.Module):
         self.depth=1
         
         out_h = self.i_size
-
-        
-        if module_type == 'conv':       #JD: modify this      
+        if module_type == 'conv':             
           if not deeper:
             self.module = Conv_Module(self.in_channels, self.out_channels, self.args.kernel_size, self.args.track_running_stats_bn, self.args.maxpool_kernel, pooling_stride=self.args.maxpool_stride, 
                                       pooling_padding=self.args.maxpool_padding, padding=self.args.padding, affine_bn=self.args.affine_bn, momentum=self.args.momentum_bn, use_bn=self.args.use_bn, stride=stride, bias=bias, **self.module_kwargs).to(device)
             #TODO: thos doesnt account for stride (assumes stride = 1), stride is other then 1 for Resnet, but resnet doesnt use variable out_h
-            out_h = (out_h + 2 * self.args.padding - self.args.kernel_size)//stride + 1  #JD: changed
-            #out_h = (out_h - self.args.maxpool_kernel) // self.args.maxpool_kernel + 1
+            out_h = out_h + 2 * self.args.padding - self.args.kernel_size + 1  
+            out_h = (out_h - self.args.maxpool_kernel) // self.args.maxpool_kernel + 1
           else:
             module1 = Conv_Module(self.in_channels, self.out_channels, self.args.kernel_size, self.args.track_running_stats_bn, self.args.maxpool_kernel, padding=self.args.padding, affine_bn=self.args.affine_bn, momentum=self.args.momentum_bn, use_bn=self.args.use_bn, **self.module_kwargs).to(device)
             out_h = out_h + 2 * self.args.padding - self.args.kernel_size + 1  
@@ -384,7 +383,7 @@ class ModularBaseNet(nn.Module):
     class Options():      
       n_modules:int=1 #numbe rof modules to begin with 
 
-      depth: int = 5      #network depth #JD: chnaged 4 to 5
+      depth: int = 4      #network depth
       lr: float = 0.01 #meta-learning rate (outer loop)   
 
       module_init: str = choice('mean', 'identical', 'existing', 'none', 'previously_active', 'most_likely', default='previously_active')#how to init the modules
@@ -417,13 +416,13 @@ class ModularBaseNet(nn.Module):
       #multihead mode, is none use single-head
       multihead:bool=choice('none', 'modulewise', 'usual', 'gated_linear', 'gated_conv', default='none')
 
-    def __init__(self, options:Options=Options(), i_size:int = 32, channels:int=3, hidden_size:int=64, num_classes:int = 5):
+    def __init__(self, options:Options=Options(), i_size:int = 28, channels:int=1, hidden_size:int=64, num_classes:int = 5):
         super().__init__()
         self.args: ModularBaseNet.Options=copy.copy(options)
         ##########################################
         #fields returned by forward pass
         fields = ['mask','mask_bf_act','hidden', 'ssl_pred', 'logit', 'regularizer', 'info']
-        self.forward_template = namedtuple('forward', fields) #, defaults=(None,) * len(fields))
+        self.forward_template = namedtuple('forward', fields, defaults=(None,) * len(fields))
         ##########################################
         ##############################
         #buffers

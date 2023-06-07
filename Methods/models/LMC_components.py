@@ -186,6 +186,7 @@ class Decoder(nn.Module):
                 kernel_size2=1 
             assert n_heads>0
             if n_heads==1:
+                print(out_channels, in_channels, kernel_size, kernel_size2)
                 self.decoder=nn.Sequential(OrderedDict([
                             ('conv_t1', nn.ConvTranspose2d(out_channels, out_channels, kernel_size=kernel_size-1, padding=padding, stride=stride)),  
                             ('norm', nn.BatchNorm2d(out_channels, momentum=momentum, affine=affine_bn,
@@ -251,7 +252,7 @@ class Decoder(nn.Module):
                 ])))
 
             self.decoder=nn.Sequential(*modules)
-
+            
 
         self.runing_activation_window_buffer = RunninStatsManager(rs_steps, keep_median=(deviation_statistic=='mad')) #RunninsStatsManager() #Statistics()
 

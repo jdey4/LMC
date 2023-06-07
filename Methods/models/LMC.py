@@ -70,7 +70,7 @@ class LMC_net(ModularBaseNet):
         #for ablation
         no_projection_phase: int = 0
 
-    def __init__(self, options:Options = Options(), module_options:LMC_conv_block.Options=LMC_conv_block.Options(), i_size: int = 32, channels:int = 3, hidden_size=[16,32,64,128,254], num_classes:int=10): #JD: changed
+    def __init__(self, options:Options = Options(), module_options:LMC_conv_block.Options=LMC_conv_block.Options(), i_size: int = 28, channels:int = 1, hidden_size=64, num_classes:int=5):
         super(LMC_net, self).__init__(options, i_size, channels, hidden_size, num_classes)
         
         self.args: LMC_net.Options = copy.copy(options)
@@ -79,7 +79,7 @@ class LMC_net(ModularBaseNet):
         self.lr_structural=self.args.lr_structural         
         self.catch_outliers_for_old_modules=self.args.catch_outliers_old
         ##############################
-        #n_modules - might change over the runtime #JD: see main_transfer.py line 73, this is currently set as 1
+        #n_modules - might change over the runtime
         self.register_buffer('_n_modules', torch.tensor([float(self.n_modules)]*self.depth))    
         self.register_buffer('_steps_since_last_addition', torch.tensor(0.))   
         self.register_buffer('min_str_prior_temp', torch.tensor(float(self.args.str_prior_temp)))
@@ -173,7 +173,7 @@ class LMC_net(ModularBaseNet):
         deeper=0
         self.str_priors=nn.ModuleList()
         hidden_size=self.hidden_size
-        for i in range(self.depth): #JD: change depth for layer
+        for i in range(self.depth):
             components_l = ComponentList()
             dropout_before=self.module_options.dropout
             for m_i in range(self.n_modules_at_layer(i)):
@@ -184,10 +184,10 @@ class LMC_net(ModularBaseNet):
                 module_type=self.args.module_type
                 self.block_constructor=LMC_conv_block               
 
-                conv = self.block_constructor(out_h, channels_in, hidden_size[i], out_h, name=f'components.{i}.{m_i}', module_type=module_type, initial_inv_block_lr=self.lr_structural, #JD: changed hidden size
+                print('Calling')
+                conv = self.block_constructor(out_h, channels_in, hidden_size[i], out_h, name=f'components.{i}.{m_i}', module_type=module_type, initial_inv_block_lr=self.lr_structural, 
                                                             deviation_threshold=self.deviation_threshold, freeze_module_after_step_limit=self.args.freeze_module_after_step_limit, deeper=deeper,
-                                                                                              options=self.module_options, num_classes=self.num_classes if (self.args.multihead=='modulewise' and i==self.depth-1) else 0)
-                channels_in = hidden_size[i]  #JD: added this line
+                                                                                                options=self.module_options, num_classes=self.num_classes if (self.args.multihead=='modulewise' and i==self.depth-1) else 0)
                 self.module_options.dropout=dropout_before
                 
                 ##################################################
@@ -200,7 +200,7 @@ class LMC_net(ModularBaseNet):
                 components_l.append(conv)
             out_h = conv.out_h
             # if module_type!='linear':
-            channels_in = hidden_size[-1]
+            channels_in = hidden_size[i]
 
             self.components.append(components_l)
 
