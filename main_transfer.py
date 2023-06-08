@@ -31,8 +31,113 @@ from Utils.nngeometry.nngeometry.metrics import FIM
 from Utils.nngeometry.nngeometry.object import PMatDiag, PVector
 from Utils.nngeometry.nngeometry.object.pspace import PMatAbstract
 from Utils.utils import construct_name_ctrl, cosine_rampdown, set_seed
+from torch.utils.data import Dataset, DataLoader
+import torchvision
 
+# Download dataset
+_ = torchvision.datasets.CIFAR100(root='./data', train=True, download=True)
+_ = torchvision.datasets.CIFAR100(root='./data', train=False, download=True)
+
+coarse_cifar100 = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+                   [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+                   [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
+                   [30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+                   [40, 41, 42, 43, 44, 45, 46, 47, 48, 49],
+                   [50, 51, 52, 53, 54, 55, 56, 57, 58, 59],
+                   [60, 61, 62, 63, 64, 65, 66, 67, 68, 69],
+                   [70, 71, 72, 73, 74, 75, 76, 77, 78, 79],
+                   [80, 81, 82, 83, 84, 85, 86, 87, 88, 89],
+                   [90, 91, 92, 93, 94, 95, 96, 97, 98, 99]]
+# Map each cifar100 label -> (task, task-label)
+tmap, cmap = {}, {}
+for tid, task in enumerate(coarse_cifar100):
+    for lid, lab in enumerate(task):
+        tmap[lab], cmap[lab] = tid, lid
+                
 device = 'cuda' if torch.cuda.is_available() else 'cpu' 
+
+
+class custom_concat(Dataset):
+    r"""
+    Subset of a dataset at specified indices.
+
+    Arguments:
+        dataset (Dataset): The whole Dataset
+        indices (sequence): Indices in the whole set selected for subset
+        labels(sequence) : targets as required for the indices. will be the same length as indices
+    """
+    def __init__(self, data1, data2):
+        self.data = np.concatenate((data1.data.reshape(-1,3,32,32),data2.data.reshape(-1,3,32,32)), axis=0)
+        self.targets = np.concatenate((data1.targets,data2.targets), axis=0)
+
+    def __getitem__(self, idx):
+        image = self.data[idx]
+        target = self.targets[idx]
+        return (image, target)
+
+    def __len__(self):
+        return len(self.targets)
+
+
+def create_cifar100_task(task_id, slot, shift, train=True, shuffle=False, bs=256):
+    # Don't use CIFAR10 mean/std to avoid leaking info 
+    # Instead use (mean, std) of (0.5, 0.25)
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.25, 0.25, 0.25]),
+    ])
+    dataset_train = torchvision.datasets.CIFAR100(
+        root='./data', train=True, download=False, transform=transform)
+    
+    dataset_test = torchvision.datasets.CIFAR100(
+        root='./data', train=False, download=False, transform=transform)
+
+    dataset = custom_concat(dataset_train, dataset_test)
+    dataset_train = custom_concat(dataset_train, dataset_test)
+    dataset_test = custom_concat(dataset_train, dataset_test)
+    dataset_val = custom_concat(dataset_train, dataset_test)
+    # Select a subset of the data-points, depending on the task
+    train_idx = []
+    test_idx= []
+    val_idx = []
+    start_class = coarse_cifar100[task_id][0]
+    end_class = coarse_cifar100[task_id][9]
+    idx = [np.where(dataset.targets == u)[0] for u in range(start_class, end_class+1)]
+        
+    for cls in range(end_class-start_class+1):
+        indx = np.roll(idx[cls],(shift-1)*100)
+        #print(combined_targets[indx[0]])
+        #print(indx[0][slot*50:(slot+1)*50], slot)
+        train_idx.extend(list(indx[slot*50:(slot+1)*40]))
+        val_idx.extend(list(indx[(slot+1)*40:(slot+1)*50]))
+        test_idx.extend(list(indx[500:600]))
+    
+    '''if train:
+        idx = train_idx
+    else:
+        idx = test_idx'''
+
+    dataset_train.targets = [cmap[dataset.targets[j]] for j in train_idx]
+    dataset_train.data = torch.from_numpy(dataset.data[train_idx]).float()
+    dataset_test.targets = [cmap[dataset.targets[j]] for j in test_idx]
+    dataset_test.data = torch.from_numpy(dataset.data[test_idx]).float()
+    dataset_val.targets = [cmap[dataset.targets[j]] for j in val_idx]
+    dataset_val.data = torch.from_numpy(dataset.data[val_idx]).float()
+
+    # Create dataloader. Set workers to 0, since too few batches
+    dataloader_train = DataLoader(
+        dataset_train, batch_size=bs, shuffle=shuffle,
+        num_workers=0, pin_memory=True)
+    dataloader_test = DataLoader(
+        dataset_test, batch_size=bs, shuffle=shuffle,
+        num_workers=0, pin_memory=True)
+    dataloader_val = DataLoader(
+        dataset_val, batch_size=bs, shuffle=shuffle,
+        num_workers=0, pin_memory=True)
+    
+    return dataloader_train, dataloader_val, dataloader_test
+
+
 
 @dataclass#(eq=True, frozen=False)
 class ArgsGenerator():       
@@ -106,7 +211,7 @@ class ArgsGenerator():
     ##############################
     #Optimization
     wdecay: float = 1e-4 #weight decay [0,1e-4, 1e-5]
-    lr: float = 1e-3 # learning rate
+    lr: float = 3e-4 # learning rate
     ##############################
     #Logging
     pr_name: Optional[str]=None #wandb project name
@@ -151,6 +256,10 @@ class ArgsGenerator():
     n_heads_decoder: int = 1 #-
     ##############################
     
+    #JD: parameters:
+    slot: int = 0
+    shift: int = 1
+    #############################
     def __post_init__(self):   
         if self.task_sequence == 's_ood':
             self.task_sequence_train ='s_ood_train'
@@ -622,7 +731,8 @@ def train(args:ArgsGenerator, model, task_idx, train_loader_current, test_loader
 
 def main(args:ArgsGenerator, task_gen:TaskGenerator):              
     t = task_gen.add_task()  
-    model=init_model(args, args.gating, n_classes=t.n_classes.item(),  i_size=t.x_dim[-1]) 
+    print(t.n_classes.item(), 'hgdjjhgfjgjc')
+    model=init_model(args, args.gating, n_classes=10,  i_size=t.x_dim[-1]) 
 
     ##############################
     #Replay Buffer                 
@@ -654,10 +764,12 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
     valid_accuracies_past = [] 
     fim_prev=[]
     for i in range(n_tasks):                     
-        print('==='*10)
-        print(f'Task train {i}, Classes: {t.concepts}')   
-        print('==='*10)                                                                                         
-        train_loader_current, valid_dataloader, test_loader_current = create_dataloader_ctrl(task_gen, t, args,0, batch_size=args.batch_size, labeled=True, task_n=i), create_dataloader_ctrl(task_gen, t, args,1,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i), create_dataloader_ctrl(task_gen, t, args,2,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i) 
+        #print('==='*10)
+        #print(f'Task train {i}, Classes: {t.concepts}')   
+        #print('==='*10)                                                                                         
+        #train_loader_current, valid_dataloader, test_loader_current = create_dataloader_ctrl(task_gen, t, args,0, batch_size=args.batch_size, labeled=True, task_n=i), create_dataloader_ctrl(task_gen, t, args,1,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i), create_dataloader_ctrl(task_gen, t, args,2,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i) 
+        print("Loading Task ", i+1)
+        train_loader_current, valid_dataloader, test_loader_current = create_cifar100_task(i, args.slot, args.shift, bs=args.batch_size)
         if args.regime=='cl':
             model,test_acc,valid_acc,fim_prev = train(args,model,i,train_loader_current,test_loader_current,valid_dataloader,fim_prev,er_buffer)
             
@@ -687,14 +799,14 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         log_wandb({'total_modules': np.sum(np.array(n_modules))}, prefix='model/')
         ####################
         #Get new task
-        try:
+        '''try:
             t = task_gen.add_task()
         except:
             print(i)
             break 
         if args.task_sequence=='s_long30' and i==30:
             print(i)
-            break 
+            break '''
         #fix previous output head          
         if isinstance(model, LMC_net):
             if isinstance(model.decoder, nn.ModuleList):   
@@ -705,10 +817,10 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
             model.fix_oh(i)   
             init_idx=get_oh_init_idx(model, create_dataloader_ctrl(task_gen, t, args,0,batch_size=args.batch_size, labeled=True, task_n=i), args)
             print('init_idx', init_idx)        
-            model.add_output_head(t.n_classes.item(), init_idx=init_idx)
+            model.add_output_head(10, init_idx=init_idx)
         else:
             #single head mode: create new, larger head
-            model.add_output_head(model.decoder.out_features+t.n_classes.item(), state_dict=model.decoder.state_dict())
+            model.add_output_head(model.decoder.out_features+10, state_dict=model.decoder.state_dict())
 
         if args.gating not in ['experts']:
             for l in range(len(n_modules)):
@@ -725,6 +837,10 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
                             # model.add_modules(at_layer=l)
             model.optimizer, model.optimizer_structure = model.get_optimizers()
     
+        accs_test, Fs, masks_test, task_selection_accs = get_accs_for_tasks(model, args, test_loaders, test_accuracies_past, task_agnostic_test=args.task_agnostic_test)
+
+        print(accs_test, 'see each task results')
+
     if args.regime=='multitask':
         #train
         train_set = torch.utils.data.ConcatDataset([dl.dataset for dl in train_loaders])
@@ -746,6 +862,8 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
                     print(torch.sum(d.weight))
     #########################
     accs_test, Fs, masks_test, task_selection_accs = get_accs_for_tasks(model, args, test_loaders, test_accuracies_past, task_agnostic_test=args.task_agnostic_test)
+
+    #print(accs_test, 'etai nfhfsh')
     for ti, (acc, Frg, task_selection_acc) in enumerate(zip(accs_test, Fs, task_selection_accs)):
         log_wandb({f'test_acc_{ti}':acc}, prefix='test/')
         #Forgetting (test)

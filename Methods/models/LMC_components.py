@@ -925,19 +925,30 @@ class GatedOh(LMC_conv_block):
 
         super().__init__(out_h, in_channels, hidden_size, out_h, module_type=module_type, options=options, **kwargs)
         
+        representation_dim = self.out_channels*self.out_h*self.out_h
         self.num_classes = num_classes 
         self.out_features = num_classes  
         if module_type=='linear':
             if self.args.activate_after_str_oh:   
                 self.module = nn.Sequential(OrderedDict([
                                 ('flatten', nn.Flatten().to(device)), 
-                                ('lin', nn.Linear(in_channels, self.out_channels).to(device) if self.projection_layer_oh else nn.Identity())                                
-                            ]))
+                                ('lin', nn.Linear(in_channels, self.out_channels).to(device) if self.projection_layer_oh else nn.Identity())
+                                ]))
             elif not self.projection_layer_oh:
-                self.module =  nn.Sequential(OrderedDict([('flatten', nn.Flatten().to(device))]))
+                print(representation_dim, 'hi')
+                self.module =  nn.Sequential(OrderedDict([('flatten', nn.Flatten().to(device))
+                                                          ]))
+                print('it\'s happening')
         
-        representation_dim = self.out_channels*self.out_h*self.out_h
         self.classifier=nn.Linear(representation_dim, num_classes).to(device)
+
+        '''self.classifier= nn.Sequential(OrderedDict([
+                         ('lin1', nn.Linear(representation_dim, 2000).to(device)),
+                         ('activation', nn.ReLU().to(device)),
+                         ('lin2', nn.Linear(2000, 2000).to(device)),
+                         ('activation', nn.ReLU().to(device)),
+                         ('final', nn.Linear(2000, num_classes).to(device))
+                        ]))'''
 
     def forward(self, x):
         n=x.size(0)   
