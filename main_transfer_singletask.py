@@ -37,9 +37,8 @@ import pandas as pd
 import pickle
 
 
-df = pd.DataFrame()
+df_single = pd.DataFrame()
 task_i = []
-base_task = []
 accuracy_task = []
 
 # Download dataset
@@ -116,8 +115,8 @@ def create_cifar100_task(task_id, slot, shift, train=True, shuffle=False, bs=256
         indx = np.roll(idx[cls],(shift-1)*100)
         #print(combined_targets[indx[0]])
         #print(indx[0][slot*50:(slot+1)*50], slot)
-        train_idx.extend(list(indx[slot*50:(slot+1)*40]))
-        val_idx.extend(list(indx[(slot+1)*40:(slot+1)*50]))
+        train_idx.extend(list(indx[slot*50:(slot*50+40)]))
+        val_idx.extend(list(indx[(slot*50+40):(slot+1)*50]))
         test_idx.extend(list(indx[500:600]))
     
     '''if train:
@@ -739,8 +738,6 @@ def train(args:ArgsGenerator, model, task_idx, train_loader_current, test_loader
 
 def main(args:ArgsGenerator, task_gen:TaskGenerator):              
     t = task_gen.add_task()  
-    
-    model=init_model(args, args.gating, n_classes=10,  i_size=t.x_dim[-1]) 
 
     ##############################
     #Replay Buffer                 
@@ -773,20 +770,21 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
     fim_prev=[]
     for i in range(n_tasks):  
         task_i.extend(list(range(1,i+2,1))) 
-        base_task.extend([i+1]*(i+1))                  
+        model=init_model(args, args.gating, n_classes=10,  i_size=t.x_dim[-1])                 
         #print('==='*10)
         #print(f'Task train {i}, Classes: {t.concepts}')   
         #print('==='*10)                                                                                         
         #train_loader_current, valid_dataloader, test_loader_current = create_dataloader_ctrl(task_gen, t, args,0, batch_size=args.batch_size, labeled=True, task_n=i), create_dataloader_ctrl(task_gen, t, args,1,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i), create_dataloader_ctrl(task_gen, t, args,2,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i) 
         print("Loading Task ", i+1)
         train_loader_current, valid_dataloader, test_loader_current = create_cifar100_task(i, args.slot, args.shift, bs=args.batch_size)
+        
         if args.regime=='cl':
-            model,test_acc,valid_acc,fim_prev = train(args,model,i,train_loader_current,test_loader_current,valid_dataloader,fim_prev,er_buffer)
+            model,test_acc,valid_acc,fim_prev = train(args,model,0,train_loader_current,test_loader_current,valid_dataloader,fim_prev,er_buffer)
             
-            test_accuracies_past.append(test_acc)
-            valid_accuracies_past.append(valid_acc)
-            test_loaders.append(test_loader_current)
-            valid_loaders.append(valid_dataloader)
+            test_accuracies_past=[test_acc]
+            valid_accuracies_past=[valid_acc]
+            test_loaders = [test_loader_current]
+            valid_loaders = [valid_dataloader]
             ####################
             #Logging
             ####################
@@ -802,8 +800,8 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         elif args.regime=='multitask':
                 #collect data first
                 train_loaders.append(train_loader_current)
-                test_loaders.append(test_loader_current)
-                valid_loaders.append(valid_dataloader)
+                test_loaders = [test_loader_current]
+                valid_loaders = [valid_dataloader]
         #Model
         n_modules = torch.tensor(model.n_modules).cpu().numpy()     
         #log_wandb({'total_modules': np.sum(np.array(n_modules))}, prefix='model/')
@@ -820,12 +818,12 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         #fix previous output head          
         if isinstance(model, LMC_net):
             if isinstance(model.decoder, nn.ModuleList):   
-                if hasattr(model.decoder[i],'weight'):
-                    print(torch.sum(model.decoder[i].weight))
+                if hasattr(model.decoder[0],'weight'):
+                    print(torch.sum(model.decoder[0].weight))
                 
         if args.multihead!='none':
-            model.fix_oh(i)   
-            init_idx=get_oh_init_idx(model, create_dataloader_ctrl(task_gen, t, args,0,batch_size=args.batch_size, labeled=True, task_n=i), args)
+            model.fix_oh(0)   
+            init_idx=get_oh_init_idx(model, create_dataloader_ctrl(task_gen, t, args,0,batch_size=args.batch_size, labeled=True, task_n=0), args)
             #print('init_idx', init_idx)        
             model.add_output_head(10, init_idx=init_idx)
         else:
@@ -852,12 +850,15 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         print(accs_test, 'see each task results')
         accuracy_task.extend(list(accs_test))
 
-    df['task'] = task_i
-    df['base_task'] = base_task
-    df['accuracy'] = accuracy_task
+    df_single['task'] = task_i
+    df_single['accuracy'] = accuracy_task
 
-    with open('LMC-'+str(args.slot)+'-'+str(args.shift)+'.pickle', 'wb') as f:
-        pickle.dump(df,f)
+    with open('results/LMC-'+str(args.slot+1)+'-'+str(args.shift)+'.pickle', 'rb') as f:
+        df = pickle.load(f)
+
+    summary = (df, df_single)
+    with open('results/LMC-'+str(args.slot+1)+'-'+str(args.shift)+'.pickle', 'wb') as f:
+        df = pickle.dump(summary, f)
 
     if args.regime=='multitask':
         #train
