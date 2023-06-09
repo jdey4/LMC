@@ -20,19 +20,27 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.transforms.transforms import ToTensor
 
-import wandb
+#import wandb
 from Data.Utils import TensorDataset     
 from Methods.models.cnn_independent_experts import ExpertMixture
 from Methods.models.LMC import LMC_net
 from Methods.replay import BalancedBuffer, Buffer
 from Utils.ctrl.ctrl.tasks.task_generator import TaskGenerator
-from Utils.logging_utils import log_wandb
+#from Utils.logging_utils import log_wandb
 from Utils.nngeometry.nngeometry.metrics import FIM
 from Utils.nngeometry.nngeometry.object import PMatDiag, PVector
 from Utils.nngeometry.nngeometry.object.pspace import PMatAbstract
 from Utils.utils import construct_name_ctrl, cosine_rampdown, set_seed
 from torch.utils.data import Dataset, DataLoader
 import torchvision
+import pandas as pd
+import pickle
+
+
+df = pd.DataFrame()
+task_i = []
+base_task = []
+accuracy_task = []
 
 # Download dataset
 _ = torchvision.datasets.CIFAR100(root='./data', train=True, download=True)
@@ -108,8 +116,8 @@ def create_cifar100_task(task_id, slot, shift, train=True, shuffle=False, bs=256
         indx = np.roll(idx[cls],(shift-1)*100)
         #print(combined_targets[indx[0]])
         #print(indx[0][slot*50:(slot+1)*50], slot)
-        train_idx.extend(list(indx[slot*50:(slot+1)*40]))
-        val_idx.extend(list(indx[(slot+1)*40:(slot+1)*50]))
+        train_idx.extend(list(indx[slot*50:(slot*50+40)]))
+        val_idx.extend(list(indx[(slot*50+40):(slot+1)*50]))
         test_idx.extend(list(indx[500:600]))
     
     '''if train:
@@ -601,10 +609,10 @@ def train_on_task(model:nn.Module, args:ArgsGenerator, train_loader, valid_loade
             #test on the test set
             model.eval()         
             acc_test, result, _ = test(model, classes, test_loader, temp=temp_e, str_prior_temp=str_temp_e, task_id=task_id if not args.task_agnostic_test else None)           
-            if 's_long' not in args.task_sequence:
-                log_wandb(result, prefix=f'result_{task_id}/')      
+            '''if 's_long' not in args.task_sequence:
+                log_wandb(result, prefix=f'result_{task_id}/')'''      
             print('test acc: ', acc_test, ' epoch ', e)
-            log_wandb({f'task_{task_id}/test_acc':acc_test})
+            #log_wandb({f'task_{task_id}/test_acc':acc_test})
         e+=1  
 
     if best_model is not None:          
@@ -752,10 +760,10 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         er_buffer = None
     ##############################
              
-    try:
+    '''try:
         wandb.watch(model)
     except:
-        pass 
+        pass '''
     n_tasks=args.n_tasks
     train_loaders=[]
     test_loaders=[]
@@ -763,13 +771,16 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
     test_accuracies_past = []
     valid_accuracies_past = [] 
     fim_prev=[]
-    for i in range(n_tasks):                     
+    for i in range(n_tasks):  
+        task_i.extend(list(range(1,i+2,1))) 
+        base_task.extend([i+1]*(i+1))                  
         #print('==='*10)
         #print(f'Task train {i}, Classes: {t.concepts}')   
         #print('==='*10)                                                                                         
         #train_loader_current, valid_dataloader, test_loader_current = create_dataloader_ctrl(task_gen, t, args,0, batch_size=args.batch_size, labeled=True, task_n=i), create_dataloader_ctrl(task_gen, t, args,1,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i), create_dataloader_ctrl(task_gen, t, args,2,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i) 
         print("Loading Task ", i+1)
         train_loader_current, valid_dataloader, test_loader_current = create_cifar100_task(i, args.slot, args.shift, bs=args.batch_size)
+        
         if args.regime=='cl':
             model,test_acc,valid_acc,fim_prev = train(args,model,i,train_loader_current,test_loader_current,valid_dataloader,fim_prev,er_buffer)
             
@@ -781,14 +792,14 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
             #Logging
             ####################
             #Current accuracy     
-            log_wandb({f'test/test_acc_{i}':test_acc})
-            log_wandb({f'valid/valid_acc_{i}':valid_acc})
+            #log_wandb({f'test/test_acc_{i}':test_acc})
+            #log_wandb({f'valid/valid_acc_{i}':valid_acc})
             #Avv acc sofar (A)
             if args.log_avv_acc:
                 accs, _, _,_ = get_accs_for_tasks(model, args, test_loaders, task_agnostic_test=args.task_agnostic_test)
-                log_wandb({f'test/avv_test_acc_sofar':np.mean(accs+[test_acc])})
+                #log_wandb({f'test/avv_test_acc_sofar':np.mean(accs+[test_acc])})
                 accs_valid, _, _,_ = get_accs_for_tasks(model, args, valid_loaders, task_agnostic_test=args.task_agnostic_test)
-                log_wandb({f'test/avv_test_acc_sofar':np.mean(accs_valid+[valid_acc])})
+                #log_wandb({f'test/avv_test_acc_sofar':np.mean(accs_valid+[valid_acc])})
         elif args.regime=='multitask':
                 #collect data first
                 train_loaders.append(train_loader_current)
@@ -796,7 +807,7 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
                 valid_loaders.append(valid_dataloader)
         #Model
         n_modules = torch.tensor(model.n_modules).cpu().numpy()     
-        log_wandb({'total_modules': np.sum(np.array(n_modules))}, prefix='model/')
+        #log_wandb({'total_modules': np.sum(np.array(n_modules))}, prefix='model/')
         ####################
         #Get new task
         '''try:
@@ -816,15 +827,15 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         if args.multihead!='none':
             model.fix_oh(i)   
             init_idx=get_oh_init_idx(model, create_dataloader_ctrl(task_gen, t, args,0,batch_size=args.batch_size, labeled=True, task_n=i), args)
-            print('init_idx', init_idx)        
+            #print('init_idx', init_idx)        
             model.add_output_head(10, init_idx=init_idx)
         else:
             #single head mode: create new, larger head
             model.add_output_head(model.decoder.out_features+10, state_dict=model.decoder.state_dict())
 
         if args.gating not in ['experts']:
-            for l in range(len(n_modules)):
-                log_wandb({f'total_modules_l{l}': n_modules[l]}, prefix='model/')
+            '''for l in range(len(n_modules)):
+                log_wandb({f'total_modules_l{l}': n_modules[l]}, prefix='model/')'''
             if args.use_structural:      
                 if args.use_backup_system:
                     model.freeze_permanently_structure()
@@ -840,6 +851,14 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         accs_test, Fs, masks_test, task_selection_accs = get_accs_for_tasks(model, args, test_loaders, test_accuracies_past, task_agnostic_test=args.task_agnostic_test)
 
         print(accs_test, 'see each task results')
+        accuracy_task.extend(list(accs_test))
+
+    df['task'] = task_i
+    df['base_task'] = base_task
+    df['accuracy'] = accuracy_task
+
+    with open('results/LMC-'+str(args.slot+1)+'-'+str(args.shift)+'.pickle', 'wb') as f:
+        pickle.dump(df,f)
 
     if args.regime=='multitask':
         #train
@@ -864,19 +883,19 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
     accs_test, Fs, masks_test, task_selection_accs = get_accs_for_tasks(model, args, test_loaders, test_accuracies_past, task_agnostic_test=args.task_agnostic_test)
 
     #print(accs_test, 'etai nfhfsh')
-    for ti, (acc, Frg, task_selection_acc) in enumerate(zip(accs_test, Fs, task_selection_accs)):
+    '''for ti, (acc, Frg, task_selection_acc) in enumerate(zip(accs_test, Fs, task_selection_accs)):
         log_wandb({f'test_acc_{ti}':acc}, prefix='test/')
         #Forgetting (test)
         log_wandb({f'F_test_{ti}':Frg}, prefix='test/')           
         #Task selection accuracy (only relevant in not ask id is geven at test time) (test)
-        log_wandb({f'Task_selection_acc{ti}':task_selection_acc}, prefix='test/')    
+        log_wandb({f'Task_selection_acc{ti}':task_selection_acc}, prefix='test/')  '''  
     ####################
     #Average accuracy (test) at the end of the sequence 
     print(accs_test)
     print('Average accuracy (test) at the end of the sequence:',np.mean(accs_test))
-    log_wandb({"mean_test_acc":np.mean(accs_test)})#, prefix='test/')
+    #log_wandb({"mean_test_acc":np.mean(accs_test)})#, prefix='test/')
     #Average forgetting (test)
-    log_wandb({"mean_test_F":np.mean(Fs)})#, prefix='test/')
+    #log_wandb({"mean_test_F":np.mean(Fs)})#, prefix='test/')
     ####################
     #Masks / Module usage
     if len(masks_test)>0 and args.gating=='locspec':         
@@ -889,7 +908,7 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
                 spine.set_visible(True)
         pyplot.setp(axs[:], xlabel=f'layer')
         pyplot.setp(axs[0], ylabel='module')
-        log_wandb({f"module usage": wandb.Image(fig)})
+        #log_wandb({f"module usage": wandb.Image(fig)})
         if args.save_figures:
             for i in range(len(masks_test)):
                 print(masks_test[i].cpu().T)
@@ -898,18 +917,18 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
             fig.savefig(f'module_selection_{args.task_sequence}.pdf', format='pdf', dpi=300)
     ####################
     accs_valid, Fs_valid, _, task_selection_accs = get_accs_for_tasks(model, args, valid_loaders, valid_accuracies_past, task_agnostic_test=args.task_agnostic_test)        
-    for ti, (acc, Frg, task_selection_acc) in enumerate(zip(accs_valid, Fs_valid, task_selection_accs)):
+    '''for ti, (acc, Frg, task_selection_acc) in enumerate(zip(accs_valid, Fs_valid, task_selection_accs)):
         log_wandb({f'valid_acc_{ti}':acc}, prefix='valid/')
         #Forgetting (valid)
         log_wandb({f'F_valid_{ti}':Frg}, prefix='valid/') 
         #Task selection accuracy (only relevant in not ask id is geven at test time)(valid)
-        log_wandb({f'Task_selection_acc{ti}':task_selection_acc}, prefix='valid/')        
+        log_wandb({f'Task_selection_acc{ti}':task_selection_acc}, prefix='valid/')'''        
     ####################
     print('Average accuracy (valid) at the end of the sequence:',np.mean(accs_valid))
     #Average accuracy (valid) at the end of the sequence 
-    log_wandb({"mean_valid_acc":np.mean(accs_valid)})#, prefix='valid/')
+    #log_wandb({"mean_valid_acc":np.mean(accs_valid)})#, prefix='valid/')
     #Average forgetting (valid)
-    log_wandb({"mean_valid_F":np.mean(Fs_valid)})#, prefix='test/')
+    #log_wandb({"mean_valid_F":np.mean(Fs_valid)})#, prefix='test/')
     ####################    
          
     if args.task_sequence_test is not None and 'ood' in args.task_sequence:
@@ -947,8 +966,8 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
             accuracies.append(test_acc)
             accuracies_valid.append(valid_acc)
         
-        log_wandb({f"mean_test_ood": np.mean(accuracies)}) 
-        log_wandb({f"mean_valid_ood": np.mean(accuracies_valid)})
+        #log_wandb({f"mean_test_ood": np.mean(accuracies)}) 
+        #log_wandb({f"mean_valid_ood": np.mean(accuracies_valid)})
         array=[]
         array_valid=[]
         indexes = np.unique(transformations, return_index=True)[1]
@@ -982,14 +1001,14 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
             plt.setp(axs[:, 0], ylabel='module')
             pyplot.savefig('module_selection.pdf', format='pdf',dpi=300, bbox_inches='tight')
 
-            log_wandb({f"ood/module_usage": wandb.Image(fig)})
+            #log_wandb({f"ood/module_usage": wandb.Image(fig)})
         
         col = np.unique(classes)
         df_cm = pd.DataFrame(array[:len(col)], index = unique_transformations[:len(col)],columns = np.unique(classes))
 
-        log_wandb({f"mean_test_ood": np.mean(array[:len(col)])}) 
-        log_wandb({f"mean_valid_ood": np.mean(array_valid[:len(col)])})
-        plot_confusion(df_cm, wandb_tag='confusion_matrix')
+        #log_wandb({f"mean_test_ood": np.mean(array[:len(col)])}) 
+        #log_wandb({f"mean_valid_ood": np.mean(array_valid[:len(col)])})
+        #plot_confusion(df_cm, wandb_tag='confusion_matrix')
         return df_cm
     return None
                         
@@ -1006,10 +1025,10 @@ def plot_confusion(df_cm, wandb_tag=None, save_dir=None, labels=None):
     hm.xaxis.set_ticklabels(hm.xaxis.get_ticklabels(), rotation=0, ha='center', fontsize=30)
     
     #confusion matrix
-    if wandb_tag is not None:
+    '''if wandb_tag is not None:
         log_wandb({f"{wandb_tag}": wandb.Image(fig)})
     if save_dir is not None:
-        fig.savefig(save_dir, format='pdf', dpi=300, bbox_inches = 'tight',pad_inches = 0)
+        fig.savefig(save_dir, format='pdf', dpi=300, bbox_inches = 'tight',pad_inches = 0)'''
     
     matplotlib.rc_file_defaults()
         
@@ -1028,9 +1047,9 @@ if __name__== "__main__":
         if args_generator.debug:
             pr_name='test'
         # if not args_generator.debug:
-        run = wandb.init(project=pr_name, notes=args_generator.wand_notes, settings=wandb.Settings(start_method="fork"), reinit=(args_generator.n_runs>1))
-        if not args_generator.debug:      
-            wandb.config.update(args_generator, allow_val_change=False)  
+        #run = wandb.init(project=pr_name, notes=args_generator.wand_notes, settings=wandb.Settings(start_method="fork"), reinit=(args_generator.n_runs>1))
+        #if not args_generator.debug:      
+            #wandb.config.update(args_generator, allow_val_change=False)  
         set_seed(manualSeed=args_generator.seed)
         df= main(args_generator, task_gen)
         if df is not None:
@@ -1055,4 +1074,4 @@ if __name__== "__main__":
                 pm=u"\u00B1" #'+/-'
                 l_row.append(f"{m_formated}\n{pm}{std_formated}")
             lables.append(l_row)
-        plot_confusion(mean, wandb_tag='confusion_matrix_final', save_dir=f'confusion_final_{pr_name}_{args_generator.gating}_{args_generator.ewc}_ood.pdf', labels=lables)
+        #plot_confusion(mean, wandb_tag='confusion_matrix_final', save_dir=f'confusion_final_{pr_name}_{args_generator.gating}_{args_generator.ewc}_ood.pdf', labels=lables)

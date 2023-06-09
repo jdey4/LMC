@@ -935,10 +935,8 @@ class GatedOh(LMC_conv_block):
                                 ('lin', nn.Linear(in_channels, self.out_channels).to(device) if self.projection_layer_oh else nn.Identity())
                                 ]))
             elif not self.projection_layer_oh:
-                print(representation_dim, 'hi')
                 self.module =  nn.Sequential(OrderedDict([('flatten', nn.Flatten().to(device))
                                                           ]))
-                print('it\'s happening')
         
         self.classifier=nn.Linear(representation_dim, num_classes).to(device)
 
