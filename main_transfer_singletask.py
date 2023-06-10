@@ -86,7 +86,7 @@ class custom_concat(Dataset):
         return len(self.targets)
 
 
-def create_cifar100_task(task_id, slot, shift, train=True, shuffle=False, bs=256):
+def create_cifar100_task(task_id, shift, train=True, shuffle=False, bs=256):
     # Don't use CIFAR10 mean/std to avoid leaking info 
     # Instead use (mean, std) of (0.5, 0.25)
     transform = transforms.Compose([
@@ -115,8 +115,8 @@ def create_cifar100_task(task_id, slot, shift, train=True, shuffle=False, bs=256
         indx = np.roll(idx[cls],(shift-1)*100)
         #print(combined_targets[indx[0]])
         #print(indx[0][slot*50:(slot+1)*50], slot)
-        train_idx.extend(list(indx[slot*50:(slot*50+40)]))
-        val_idx.extend(list(indx[(slot*50+40):(slot+1)*50]))
+        train_idx.extend(list(indx[:400]))
+        val_idx.extend(list(indx[400:500]))
         test_idx.extend(list(indx[500:600]))
     
     '''if train:
@@ -776,7 +776,7 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         #print('==='*10)                                                                                         
         #train_loader_current, valid_dataloader, test_loader_current = create_dataloader_ctrl(task_gen, t, args,0, batch_size=args.batch_size, labeled=True, task_n=i), create_dataloader_ctrl(task_gen, t, args,1,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i), create_dataloader_ctrl(task_gen, t, args,2,args.batch_size, labeled=True, shuffle_test=('ood' in args.task_sequence), task_n=i) 
         print("Loading Task ", i+1)
-        train_loader_current, valid_dataloader, test_loader_current = create_cifar100_task(i, args.slot, args.shift, bs=args.batch_size)
+        train_loader_current, valid_dataloader, test_loader_current = create_cifar100_task(i, args.shift, bs=args.batch_size)
         
         if args.regime=='cl':
             model,test_acc,valid_acc,fim_prev = train(args,model,0,train_loader_current,test_loader_current,valid_dataloader,fim_prev,er_buffer)
@@ -853,11 +853,11 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
     df_single['task'] = task_i
     df_single['accuracy'] = accuracy_task
 
-    with open('results/LMC-'+str(args.slot+1)+'-'+str(args.shift)+'.pickle', 'rb') as f:
+    with open('results/LMC-'+str(args.shift)+'.pickle', 'rb') as f:
         df = pickle.load(f)
 
     summary = (df, df_single)
-    with open('results/LMC-'+str(args.slot+1)+'-'+str(args.shift)+'.pickle', 'wb') as f:
+    with open('results/LMC-'+str(args.shift)+'.pickle', 'wb') as f:
         df = pickle.dump(summary, f)
 
     if args.regime=='multitask':
