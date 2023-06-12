@@ -769,7 +769,7 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
     valid_accuracies_past = [] 
     fim_prev=[]
     for i in range(n_tasks):  
-        task_i.extend(i+1) 
+        task_i.extend([i+1]) 
         model=init_model(args, args.gating, n_classes=10,  i_size=t.x_dim[-1])                 
         #print('==='*10)
         #print(f'Task train {i}, Classes: {t.concepts}')   
