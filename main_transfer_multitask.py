@@ -35,7 +35,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision
 import pandas as pd
 import pickle
-
+import joblib
 
 df = pd.DataFrame()
 task_i = []
@@ -852,12 +852,26 @@ def main(args:ArgsGenerator, task_gen:TaskGenerator):
         print(accs_test, 'see each task results')
         accuracy_task.extend(list(accs_test))
 
+        #print(model.__dir__())
+        #joblib.dump(model.get_parameter(), 'model_'+str(i))
+
+        param_size = 0
+        for param in model.parameters():
+            param_size += param.nelement() * param.element_size()
+        buffer_size = 0
+        for buffer in model.buffers():
+            buffer_size += buffer.nelement() * buffer.element_size()
+
+        size_all_mb = (param_size + buffer_size) / 1024**2
+        print(size_all_mb, 'hfwur')
+
     df['task'] = task_i
     df['base_task'] = base_task
     df['accuracy'] = accuracy_task
 
-    with open('results/LMC-'+str(args.shift)+'.pickle', 'wb') as f:
-        pickle.dump(df,f)
+    
+    '''with open('results/LMC-'+str(args.shift)+'.pickle', 'wb') as f:
+        pickle.dump(df,f)'''
 
     if args.regime=='multitask':
         #train
